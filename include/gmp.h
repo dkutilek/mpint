@@ -123,7 +123,3 @@ int mpz_fits_sshort_p(mpz_t op);
 size_t mpz_sizeinbase(mpz_t op, int base);
 
 #endif /* mpzNT_H_ */
-
-#ifndef MPZ_CHAR_PER_INT
-#define MPZ_CHAR_PER_INT ((sizeof(UINT_MAX) >> 3) + 1)
-#endif

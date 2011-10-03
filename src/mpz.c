@@ -17,7 +17,7 @@ void mpz_init(mpz_t x)
 }
 void mpz_clear(mpz_t x)
 {
-
+  
 }
 
 // Assignment
@@ -93,37 +93,37 @@ double mpz_get_d(mpz_t op)
 }
 char * mpz_get_string(char * str, int base, mpz_t op)
 {
-  str = malloc(MPZ_CHAR_PER_INT * op.len);
+  mpz_t x, div, q, r;
+  int i;
+  size_t size;
   char * beg = str;
-  uintmax_t size = MPZ_CHAR_PER_INT * op.len;
+
+  // + 1 for the ternimating zero bit
+  size = mpz_sizeinbase(op, base) + 1;
+  // TODO check for negative number
+  // allocate a char for the negative sign if necessary
+  str = malloc(size);
   str += size;
-  uintmax_t div = 10;
-  while (mpz_cmp_si(op, 0) < 0)
+  str = 0;
+  str--;
+  
+  mpz_init_set(x, op);
+  mpz_init_set_si(div, base);
+  mpz_init(q);
+  mpz_init(r);
+  
+  for (i = 0; i < size; i++)
     {
-      /*mpz_t digit = mpz_mod(op, div);
-      op = mpz_div(op, div);
-
-
-      if (mpz_gt(digit, 9))
-        {
-          //TODO some error handling
-        }
-      else
-        {
-        uintmax_t trunc = mpz_truncate(digit);
-        char ch = to_digit(trunc);
-        if (ch != NULL)
-          {
-            *str = ch;
-            str--;
-          }
-        else
-          {
-            //TODO some error handling
-          }
-        }
-      div *= 10;*/
+      mpz_tdiv_qr(q, r, x, div);
+      *str = to_digit(r, base);
+      str--;
+      mpz_set(x, q);
     }
+
+  mpz_clear(q);
+  mpz_clear(r);
+  mpz_clear(x);
+  mpz_clear(div);
 
   return beg;
 }
