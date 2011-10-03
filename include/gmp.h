@@ -13,8 +13,11 @@
 
 typedef struct
 {
-  uintmax_t * value;
-  uintmax_t len;
+  intmax_t * value;     // Pointer to array of integers.
+                        // The number being represented has
+                        // the same sign as all of the integers
+                        // in the array.
+  uintmax_t len;        // Number of integers in the array
 } mpz_t;
 
 typedef uintmax_t mp_bitcnt_t;
