@@ -13,7 +13,7 @@
 void
 mpz_init (mpz_t x)
 {
-  x.value = _malloc(sizeof (intmax_t));
+  x.value = _malloc(sizeof (uintmax_t));
   x.len = 1;
 }
 void
@@ -27,25 +27,29 @@ mpz_clear (mpz_t x)
 void
 mpz_set (mpz_t rop, mpz_t op)
 {
-  rop.value = _malloc (sizeof (intmax_t) * abs (op.len));
+  rop.value = _malloc (sizeof (uintmax_t) * abs (op.len));
   memcpy ((void *) rop.value, (void *) op.value,
-      sizeof (intmax_t) * abs(op.len));
+      sizeof (uintmax_t) * abs(op.len));
   rop.len = op.len;
 }
 void
 mpz_set_ui (mpz_t rop, unsigned long int op)
 {
-
+  _realloc(rop.value, sizeof (uintmax_t));
+  rop.len = 1;
+  *rop.value = op;
 }
 void
 mpz_set_si (mpz_t rop, signed long int op)
 {
-
+  _realloc(rop.value, sizeof (uintmax_t));
+  rop.len = op < 0 ? -1 : 1;
+  *rop.value = abs (op);
 }
 void
 mpz_set_d (mpz_t top, double op)
 {
-
+  // TODO
 }
 int
 mpz_set_str (mpz_t rop, char * str, int base)
@@ -72,7 +76,8 @@ mpz_swap (mpz_t rop1, mpz_t rop2)
 void
 mpz_init_set (mpz_t rop, mpz_t op)
 {
-
+  mpz_init (rop);
+  mpz_set (rop, op);
 }
 void
 mpz_init_set_ui (mpz_t rop, unsigned long int op)
@@ -93,6 +98,12 @@ int
 mpz_init_set_str (mpz_t rop, char * str, int base)
 {
   int result = 0;
+
+  while (*str != 0)
+    {
+
+      str++;
+    }
 
   return result;
 }
@@ -148,7 +159,7 @@ mpz_get_string (char * str, int base, mpz_t op)
   for (i = 0; i < size; i++)
     {
       mpz_tdiv_qr (q, r, x, div);
-      *str = to_digit (r, base);
+      *str = int_to_digit (r, base);
       str--;
       mpz_set (x, q);
     }
@@ -163,7 +174,7 @@ mpz_get_string (char * str, int base, mpz_t op)
 
 // Arithmetic;
 void
-mpz_add (mpz_t rop, mpz_t op2)
+mpz_add (mpz_t rop, mpz_t op1, mpz_t op2)
 {
 
 }
@@ -536,23 +547,23 @@ mpz_sizeinbase (mpz_t op, int base)
 }
 
 void *
-_malloc(size_t size)
+_malloc (size_t size)
 {
-  void * result = malloc(size);
-  _mem_check(result);
+  void * result = malloc (size);
+  _mem_check (result);
   return result;
 }
 
 void *
-_realloc(void * ptr, size_t size)
+_realloc (void * ptr, size_t size)
 {
-  void * result = realloc(ptr, size);
-  _mem_check(result);
+  void * result = realloc (ptr, size);
+  _mem_check (result);
   return result;
 }
 
 void
-_mem_check(void * ptr)
+_mem_check (void * ptr)
 {
   if (ptr == NULL)
     {
@@ -560,15 +571,33 @@ _mem_check(void * ptr)
     }
 }
 
-char
-to_digit(uintmax_t x)
+int
+digit_to_int (char ch, int base)
 {
-  if (x < 10)
+  if (base < 2 || 62 < base)
+    return -1;
+
+  if (isdigit (ch))
+    return ch - '0';
+  else if (isupper (ch))
+    return ch - 'A' + 10;
+  else if (islower (ch))
     {
-      return x + '0';
+      if (base < 37)
+        return ch - 'a' + 10;
+      else if (base < 63)
+        return ch - 'a' + 36;
+      else
+        return -1;
     }
   else
-    {
-      return 0;
-    }
+    return -1;
+}
+
+char
+int_to_digit (mpz_t x, int base)
+{
+  char ch = "0";
+
+  return ch;
 }

@@ -13,11 +13,10 @@
 
 typedef struct
 {
-  intmax_t * value;     // Pointer to array of integers.
+  uintmax_t * value;    // Pointer to array of integers.
+  intmax_t len;         // Number of integers in the array
                         // The number being represented has
-                        // the same sign as all of the integers
-                        // in the array.
-  uintmax_t len;        // Number of integers in the array
+                        // the same sign as len.
 } mpz_t;
 
 typedef uintmax_t mp_bitcnt_t;
@@ -48,7 +47,7 @@ double mpz_get_d(mpz_t op);
 char * mpz_get_string(char * str, int base, mpz_t op);
 
 // Arithmetic;
-void mpz_add(mpz_t rop, mpz_t op2);
+void mpz_add(mpz_t rop, mpz_t op1, mpz_t op2);
 void mpz_add_ui(mpz_t rop, mpz_t op1, unsigned long int op2);
 void mpz_sub(mpz_t rop, mpz_t op1, mpz_t op2);
 void mpz_sub_ui(mpz_t rop, mpz_t op1, mpz_t op2);
