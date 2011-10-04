@@ -100,12 +100,28 @@ mpz_init_set_d (mpz_t rop, double op)
 int
 mpz_init_set_str (mpz_t rop, char * str, int base)
 {
-  int result = 0;
   char ch;
+  int digit, negative = 0;
+  mpz_t value;
+  mpz_init (value);
+  mpz_set_si (rop, 0);
 
+  /* Skip whitespace */
   while (isspace (*str))
     str++;
 
+  /* Check for negative sign */
+  if (*str == '-')
+    {
+      negative = 1;
+      str++;
+    }
+
+  /* Read in the base from the beginning of the string if it isn't specified.
+   * 0x or 0X for hex
+   * 0b or 0B for binary
+   * 0 for octal
+   * and 10 otherwise */
   if (base == 0)
     {
       if (*str == '0')
@@ -126,11 +142,28 @@ mpz_init_set_str (mpz_t rop, char * str, int base)
               base = 8;
             }
         }
+      else
+        {
+          base = 10;
+        }
+    }
+  else if (base < 2 || 62 < base) {
+      return -1;
+  }
+
+  /* Read the rest of the string */
+  while ((ch = *str++) != 0)
+    {
+      /* Get the digit */
+      digit = digit_to_int (ch, base);
+      if (digit < 0)
+        return -1;
+      /* Multiply by the base to shift the number over, then add the digit. */
+      mpz_mult (value, rop, base);
+      mpz_add_si (rop, value, digit);
     }
 
-
-
-  return result;
+  return 0;
 }
 
 // Conversion
@@ -172,15 +205,18 @@ mpz_get_string (char * str, int base, mpz_t op)
   mem_check (str);
   if (mpz_cmp_si (op, 0) < 0)
     str = "-";
+  /* Move to the end of the string */
   str += size;
   str = 0;
   str--;
   
+  /* Initialize the multiple precision ints */
   mpz_init_set (x, op);
   mpz_init_set_si (div, base);
   mpz_init (q);
   mpz_init (r);
   
+  /* Copy all digits to the string */
   for (i = 0; i < size; i++)
     {
       mpz_tdiv_qr (q, r, x, div);
@@ -189,6 +225,7 @@ mpz_get_string (char * str, int base, mpz_t op)
       mpz_set (x, q);
     }
 
+  /* Clear the space associated with the ints */
   mpz_clear (q);
   mpz_clear (r);
   mpz_clear (x);
@@ -201,12 +238,58 @@ mpz_get_string (char * str, int base, mpz_t op)
 void
 mpz_add (mpz_t rop, mpz_t op1, mpz_t op2)
 {
+  int carry = 0;
+  intmax_t len1, len2, i;
+  mpz_t x;
 
+  /* If only one of the numbers is negative, use subtract */
+  if (op1.len < 0 && 0 < op2.len)
+    {
+      mpz_init_set (x, op1);
+      mpz_neg (x);
+      mpz_sub (rop, op2, x);
+      mpz_clear (x);
+    }
+  else if (0 < op1.len && op2.len < 0)
+    {
+      mpz_init_set (x, op2);
+      mpz_neg (x);
+      mpz_sub (rop, op1, x);
+      mpz_clear (x);
+    }
+  /* Otherwise, add */
+  else
+    {
+      len1 = abs (op1.len);
+      len2 = abs (op2.len);
+      rop.len = len1 < len2 ? len2 : len1;
+      _realloc (rop.value, sizeof (uintmax_t) * rop.len);
+      for (i = 0; i < rop.len; i++)
+        {
+          rop.value[i] = carry;
+          carry = 0;
+          if (i < len1)
+            carry += _add (rop.value[i], op1.value[i]);
+          if (i < len2)
+            carry += _add (rop.value[i], op2.value[i]);
+        }
+      if (carry)
+        {
+          rop.len++;
+          _realloc (rop.value, sizeof (uintmax_t) * rop.len);
+          rop.value[rop.len-1] = carry;
+        }
+      if (op1.len < 0 || op2.len < 0)
+        rop.len = -1 * rop.len;
+    }
 }
 void
 mpz_add_ui (mpz_t rop, mpz_t op1, unsigned long int op2)
 {
-
+  mpz_t x;
+  mpz_init_set_ui (x, op2);
+  mpz_add (rop, op1, x);
+  mpz_clear (x);
 }
 void
 mpz_sub (mpz_t rop, mpz_t op1, mpz_t op2)
@@ -216,12 +299,18 @@ mpz_sub (mpz_t rop, mpz_t op1, mpz_t op2)
 void
 mpz_sub_ui (mpz_t rop, mpz_t op1, mpz_t op2)
 {
-
+  mpz_t x;
+  mpz_init_set_ui (x, op2);
+  mpz_sub (rop, op1, x);
+  mpz_clear (x);
 }
 void
 mpz_ui_sub (mpz_t rop, unsigned long int op1, mpz_t op2)
 {
-
+  mpz_t x;
+  mpz_init_set_ui (x, op1);
+  mpz_sub (rop, x, op2);
+  mpz_clear (x);
 }
 void
 mpz_mul (mpz_t rop, mpz_t op1, mpz_t op2)
