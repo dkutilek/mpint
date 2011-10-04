@@ -50,7 +50,7 @@ char * mpz_get_string(char * str, int base, mpz_t op);
 void mpz_add(mpz_t rop, mpz_t op1, mpz_t op2);
 void mpz_add_ui(mpz_t rop, mpz_t op1, unsigned long int op2);
 void mpz_sub(mpz_t rop, mpz_t op1, mpz_t op2);
-void mpz_sub_ui(mpz_t rop, mpz_t op1, mpz_t op2);
+void mpz_sub_ui(mpz_t rop, mpz_t op1, unsigned long int);
 void mpz_ui_sub(mpz_t rop, unsigned long int op1, mpz_t op2);
 void mpz_mul(mpz_t rop, mpz_t op1, mpz_t op2);
 void mpz_mul_si(mpz_t rop, mpz_t op1, signed long int op2);

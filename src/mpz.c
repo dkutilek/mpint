@@ -8,18 +8,26 @@
 #include "../include/gmp.h"
 #include <stdlib.h>
 #include <math.h>
+#include <ctype.h>
+#include <string.h>
+
+void * _malloc (size_t size);
+void * _realloc (void * ptr, size_t size);
+void _mem_check (void * ptr);
+int digit_to_int (char ch, int base);
+char int_to_digit (mpz_t op, int base);
 
 // Initialization
 void
 mpz_init (mpz_t x)
 {
-  x.value = _malloc(sizeof (uintmax_t));
+  x.value = _malloc (sizeof (uintmax_t));
   x.len = 1;
 }
 void
 mpz_clear (mpz_t x)
 {
-  free(x.value);
+  free (x.value);
   x.len = 0;
 }
 
@@ -61,8 +69,8 @@ mpz_set_str (mpz_t rop, char * str, int base)
 void
 mpz_swap (mpz_t rop1, mpz_t rop2)
 {
-  uintmax_t len;
-  intmax_t * value;
+  intmax_t len;
+  uintmax_t * value;
 
   value = rop1.value;
   len = rop1.len;
@@ -126,7 +134,7 @@ mpz_init_set_str (mpz_t rop, char * str, int base)
     {
       if (*str == '0')
         {
-          ch = tolower (str++);
+          ch = tolower (*str++);
           if (ch == 'x')
             {
               str++;
@@ -159,8 +167,8 @@ mpz_init_set_str (mpz_t rop, char * str, int base)
       if (digit < 0)
         return -1;
       /* Multiply by the base to shift the number over, then add the digit. */
-      mpz_mult (value, rop, base);
-      mpz_add_si (rop, value, digit);
+      mpz_mul_si (value, rop, base);
+      mpz_add_ui (rop, value, digit);
     }
 
   return 0;
@@ -170,22 +178,19 @@ mpz_init_set_str (mpz_t rop, char * str, int base)
 unsigned long int
 mpz_get_ui (mpz_t op)
 {
-  unsigned long int result = 0;
-
-  return result;
+  return op.value[0];
 }
 signed long int
 mpz_get_si (mpz_t op)
 {
-  signed long int result = 0;
-
-  return result;
+  signed long int result = op.value[0];
+  return op.len < 0 ? - result : result;
 }
 double
 mpz_get_d (mpz_t op)
 {
   double result = 0;
-
+  // TODO
   return result;
 }
 char *
@@ -202,7 +207,6 @@ mpz_get_string (char * str, int base, mpz_t op)
   if (mpz_cmp_si (op, 0) < 0)
     size++;
   str = _malloc (size);
-  mem_check (str);
   if (mpz_cmp_si (op, 0) < 0)
     str = "-";
   /* Move to the end of the string */
@@ -235,6 +239,23 @@ mpz_get_string (char * str, int base, mpz_t op)
 }
 
 // Arithmetic;
+int
+_add (uintmax_t * rop, uintmax_t * op)
+{
+  uintmax_t result = *rop + *op;
+  /* Check for overflow and return the carry. */
+  if (result < (*rop < *op ? *op : *rop))
+    {
+      *rop = result;
+      return 1;
+    }
+  else
+    {
+      *rop = result;
+      return 0;
+    }
+}
+
 void
 mpz_add (mpz_t rop, mpz_t op1, mpz_t op2)
 {
@@ -246,14 +267,14 @@ mpz_add (mpz_t rop, mpz_t op1, mpz_t op2)
   if (op1.len < 0 && 0 < op2.len)
     {
       mpz_init_set (x, op1);
-      mpz_neg (x);
+      x.len *= -1;
       mpz_sub (rop, op2, x);
       mpz_clear (x);
     }
   else if (0 < op1.len && op2.len < 0)
     {
       mpz_init_set (x, op2);
-      mpz_neg (x);
+      x.len *= -1;
       mpz_sub (rop, op1, x);
       mpz_clear (x);
     }
@@ -269,9 +290,9 @@ mpz_add (mpz_t rop, mpz_t op1, mpz_t op2)
           rop.value[i] = carry;
           carry = 0;
           if (i < len1)
-            carry += _add (rop.value[i], op1.value[i]);
+            carry += _add (rop.value + i, op1.value + i);
           if (i < len2)
-            carry += _add (rop.value[i], op2.value[i]);
+            carry += _add (rop.value + i, op2.value + i);
         }
       if (carry)
         {
@@ -297,7 +318,7 @@ mpz_sub (mpz_t rop, mpz_t op1, mpz_t op2)
 
 }
 void
-mpz_sub_ui (mpz_t rop, mpz_t op1, mpz_t op2)
+mpz_sub_ui (mpz_t rop, mpz_t op1, unsigned long int op2)
 {
   mpz_t x;
   mpz_init_set_ui (x, op2);
@@ -656,7 +677,15 @@ size_t
 mpz_sizeinbase (mpz_t op, int base)
 {
   size_t result = 0;
-
+  mpz_t temp, swap;
+  mpz_init_set (temp, op);
+  mpz_init (swap);
+  while (0 < mpz_cmp_si(temp, 0))
+    {
+      mpz_tdiv_q_ui (swap, temp, base);
+      mpz_swap(temp, swap);
+      result++;
+    }
   return result;
 }
 
@@ -709,9 +738,35 @@ digit_to_int (char ch, int base)
 }
 
 char
-int_to_digit (mpz_t x, int base)
+int_to_digit (mpz_t op, int base)
 {
-  char ch = "0";
+  char x;
 
-  return ch;
+  if ((base < -36 || 62 < base) || (base < 2 && -2 < base))
+      return 0;
+
+  x = (char) mpz_get_ui (op);
+
+  if (x > abs (base))
+    return 0;
+
+  if (x < 10)
+    return x + '0';
+  else if (x < 37)
+    {
+      if (base < 0)
+        return x + 'A' - 10;
+      else if (base < 37)
+        return x + 'a' - 10;
+      else if (base < 63)
+        return x + 'A' - 10;
+      else
+        return 0;
+    }
+  else if (x < 63)
+    {
+      return x + 'a' - 36;
+    }
+  else
+    return 0;
 }
