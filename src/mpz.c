@@ -82,28 +82,53 @@ mpz_init_set (mpz_t rop, mpz_t op)
 void
 mpz_init_set_ui (mpz_t rop, unsigned long int op)
 {
-
+  mpz_init (rop);
+  mpz_set_ui (rop, op);
 }
 void
 mpz_init_set_si (mpz_t rop, signed long int op)
 {
-
+  mpz_init (rop);
+  mpz_set_si (rop, op);
 }
 void
 mpz_init_set_d (mpz_t rop, double op)
 {
-
+  mpz_init (rop);
+  mpz_set_d (rop, op);
 }
 int
 mpz_init_set_str (mpz_t rop, char * str, int base)
 {
   int result = 0;
+  char ch;
 
-  while (*str != 0)
+  while (isspace (*str))
+    str++;
+
+  if (base == 0)
     {
-
-      str++;
+      if (*str == '0')
+        {
+          ch = tolower (str++);
+          if (ch == 'x')
+            {
+              str++;
+              base = 16;
+            }
+          else if (ch == 'b')
+            {
+              str++;
+              base = 2;
+            }
+          else
+            {
+              base = 8;
+            }
+        }
     }
+
+
 
   return result;
 }
