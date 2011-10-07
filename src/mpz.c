@@ -313,9 +313,95 @@ mpz_add_ui (mpz_t rop, mpz_t op1, unsigned long int op2)
   mpz_clear (x);
 }
 void
+_sub (uintmax_t * rop, uintmax_t op1, uintmax_t op2, int * borrow)
+{
+  uintmax_t mask = UINTMAX_MAX >> 1;    /* Used to ensure a subtraction that
+                                           requires borrowing does not wrap
+                                           around */
+
+  if (*borrow)
+    {
+      if (0 < op1)
+        op1--;
+      else
+        {
+          op1 = UINTMAX_MAX;
+          *borrow = 1;
+        }
+    }
+
+  /* The resulting subtraction will require borrowing */
+  if (op1 < op2)
+    *borrow = 1;
+  else
+    *borrow = 0;
+
+  *rop = op1 - op2;
+}
+void
 mpz_sub (mpz_t rop, mpz_t op1, mpz_t op2)
 {
+  int borrow = 0;
+  intmax_t len1, len2, i;
+  mpz_t x;
 
+  /* If only op2 is negative, use add */
+  if (0 < op1.len && op2.len < 0)
+    {
+      mpz_init_set (x, op2);
+      x.len *= -1;
+      mpz_add (rop, x, op2);
+      mpz_clear (x);
+    }
+  /* If only op1 is negative, use add */
+  else if (op1.len < 0 && 0 < op2.len)
+    {
+      mpz_init_set (x, op2);
+      x.len *= -1;
+      mpz_add (rop, op1, x);
+      mpz_clear (x);
+    }
+  /* Otherwise, subtract */
+  else
+    {
+      /* If op1 < op2, swap and negate the result */
+      if (mpz_cmp (op1, op2) < 0)
+        {
+          mpz_sub (rop, op2, op1);
+          rop.len *= -1;
+        }
+      else
+        {
+          rop.len = abs (op1.len);
+          _realloc (rop.value, sizeof (uintmax_t) * rop.len);
+          for (i = 0; i < rop.len; i++)
+            {
+              if (i < len1 && i < len2)
+                {
+                  _sub (rop.value + i, op1.value[i], op2.value[i], &borrow);
+                }
+              else if (i < len1)
+                {
+                  rop.value[i] = op1.value;
+                  if (borrow)
+                    {
+                      if (0 < rop.value[i])
+                        rop.value[i]--;
+                      else
+                        rop.value[i] = UINTMAX_MAX;
+                      borrow = 0;
+                    }
+                }
+              /* Should never reach this point if op2 < op1 */
+              else if (i < len2)
+                {
+                  // TODO crash
+                }
+            }
+          if (op1.len < 0)
+            rop.len *= -1;
+        }
+    }
 }
 void
 mpz_sub_ui (mpz_t rop, mpz_t op1, unsigned long int op2)
@@ -333,30 +419,87 @@ mpz_ui_sub (mpz_t rop, unsigned long int op1, mpz_t op2)
   mpz_sub (rop, x, op2);
   mpz_clear (x);
 }
+uintmax_t
+_mul (uintmax_t * rop, uintmax_t op1, uintmax_t op2, uintmax_t carry) {
+  int shift = sizeof (uintmax_t) >> 1;
+  uintmax_t top1, top2, bot1, bot2, rtop, rbot, r, mask = UINTMAX_MAX << shift;
+
+  /* Split the two operands to ensure the result does not overflow.  Take the
+     overflow of the bottom and add it to the result of the top.  Take the
+     overflow of the top and return it to be used in the next
+     multiplication. */
+
+  top1 = op1 >> shift;
+  top2 = op2 >> shift;
+  bot1 = op1 & mask;
+  bot2 = op2 & mask;
+
+  rbot = bot1 * bot2 + carry;
+  rtop = (top1 * top2) + (rbot >> shift);
+
+  *rop = (rtop << shift) | (rbot & (~mask));
+  return (rbot & mask) >> shift;
+}
 void
 mpz_mul (mpz_t rop, mpz_t op1, mpz_t op2)
 {
+  int i, j, carry;
+  intmax_t len1, len2;
+  len1 = abs (op1.len);
+  len2 = abs (op2.len);
 
+  rop.len = len1 + len2;
+
+  /* Initialize and set to 0 */
+  _realloc (rop.value, sizeof (uintmax_t) * rop.len);
+  for (j = 0; j < rop.len; j++)
+    rop.value[j] = 0;
+
+  /* Multiply */
+  for (j = 0; j < len1; j++)
+    for (i = carry = 0; i < len2; i++)
+      carry = _mul (rop + i + j, op1[i], op2[j], carry);
+
+  if (carry)
+    {
+      rop.len++;
+      _realloc (rop.value, sizeof (uintmax_t) * rop.len);
+      rop.value[rop.len-1] = carry;
+    }
+
+  /* Set the sign of the result */
+  if (op1.len < 0 && op1.len < 0)
+    rop.len = abs (rop.len);
+  else if (op1.len < 0 || op1.len < 0)
+    rop.len = -1 * abs (rop.len);
 }
 void
 mpz_mul_si (mpz_t rop, mpz_t op1, signed long int op2)
 {
-
+  mpz_t x;
+  mpz_init_set_si (x, op2);
+  mpz_mul (rop, op1, op2);
+  mpz_clear (x);
 }
 void
 mpz_mul_ui (mpz_t rop, mpz_t op1, unsigned long int op2)
 {
-
+  mpz_t x;
+  mpz_init_set_ui (x, op2);
+  mpz_mul (rop, op1, op2);
+  mpz_clear (x);
 }
 void
 mpz_neg (mpz_t rop, mpz_t op)
 {
-
+  mpz_set (rop, op);
+  rop.len *= -1;
 }
 void
 mpz_abs (mpz_t rop, mpz_t op)
 {
-
+  mpz_set (rop, op);
+  rop.len = abs (rop.len);
 }
 
 // Division
