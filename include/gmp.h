@@ -17,7 +17,9 @@ typedef struct
   intmax_t len;         // Number of integers in the array
                         // The number being represented has
                         // the same sign as len.
-} mpz_t;
+} mpz_struct;
+
+typedef mpz_struct mpz_t[1];
 
 typedef uintmax_t mp_bitcnt_t;
 
@@ -45,6 +47,8 @@ unsigned long int mpz_get_ui(mpz_t op);
 signed long int mpz_get_si(mpz_t op);
 double mpz_get_d(mpz_t op);
 char * mpz_get_string(char * str, int base, mpz_t op);
+
+char * mpz_get_hex (char * str, mpz_t op);
 
 // Arithmetic;
 void mpz_add(mpz_t rop, mpz_t op1, mpz_t op2);
