@@ -13,10 +13,8 @@
 
 typedef struct
 {
-  uintmax_t * value;    // Pointer to array of integers.
-  intmax_t len;         // Number of integers in the array
-                        // The number being represented has
-                        // the same sign as len.
+  uintmax_t * value;    // Pointer to array of twos compliment integers.
+  uintmax_t len;        // Number of integers in the array.
 } mpz_struct;
 
 typedef mpz_struct mpz_t[1];

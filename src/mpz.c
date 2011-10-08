@@ -16,18 +16,22 @@ void * _realloc (void * ptr, size_t size);
 void _mem_check (void * ptr);
 int digit_to_int (char ch, int base);
 char int_to_digit (mpz_t op, int base);
+int mpz_is_neg (mpz_t x);
+
+size_t WORD_SIZE = sizeof (uintmax_t);
 
 // Initialization
 void
 mpz_init (mpz_t x)
 {
-  x[0].value = _malloc (sizeof (uintmax_t));
+  x[0].value = _malloc (WORD_SIZE);
   x[0].len = 1;
 }
 void
 mpz_clear (mpz_t x)
 {
   free (x[0].value);
+  x[0].value = NULL;
   x[0].len = 0;
 }
 
@@ -35,24 +39,29 @@ mpz_clear (mpz_t x)
 void
 mpz_set (mpz_t rop, mpz_t op)
 {
-  rop[0].value = _malloc (sizeof (uintmax_t) * abs (op[0].len));
-  memcpy ((void *) rop[0].value, (void *) op[0].value,
-      sizeof (uintmax_t) * abs(op[0].len));
+  if (rop[0].len != op[0].len)
+    _realloc (rop[0].value, WORD_SIZE * op[0].len);
+  memcpy (rop[0].value, op[0].value, WORD_SIZE * op[0].len);
   rop[0].len = op[0].len;
 }
 void
 mpz_set_ui (mpz_t rop, unsigned long int op)
 {
-  _realloc(rop[0].value, sizeof (uintmax_t));
+  _realloc(rop[0].value, WORD_SIZE);
   rop[0].len = 1;
   *rop[0].value = op;
 }
 void
 mpz_set_si (mpz_t rop, signed long int op)
 {
-  _realloc(rop[0].value, sizeof (uintmax_t));
-  rop[0].len = op < 0 ? -1 : 1;
-  *rop[0].value = abs (op);
+  mpz_t swap;
+  signed long int result;
+  uintmax_t sign_bit = ~(UINTMAX_MAX >> 1);
+  _realloc(rop[0].value, WORD_SIZE);
+  rop[0].len = 1;
+  *rop[0].value = op;
+  if (op < 0)
+    *rop[0].value &= sign_bit;
 }
 void
 mpz_set_d (mpz_t top, double op)
@@ -69,7 +78,7 @@ mpz_set_str (mpz_t rop, char * str, int base)
 void
 mpz_swap (mpz_t rop1, mpz_t rop2)
 {
-  intmax_t len;
+  uintmax_t len;
   uintmax_t * value;
 
   value = rop1[0].value;
@@ -184,7 +193,7 @@ signed long int
 mpz_get_si (mpz_t op)
 {
   signed long int result = op[0].value[0];
-  return op[0].len < 0 ? - result : result;
+  return mpz_is_neg (op) ? - abs (result) : abs (result);
 }
 double
 mpz_get_d (mpz_t op)
@@ -241,30 +250,37 @@ mpz_get_string (char * str, int base, mpz_t op)
 char *
 mpz_get_hex (char * str, mpz_t op)
 {
-  intmax_t i;
+  uintmax_t i;
+  mpz_t x;
   int result;
   char * ch;
+  mpz_init (x);
 
   if (str == NULL)
     {
-      str = _malloc (sizeof (char) * ((abs(op[0].len) << 2) + abs(op[0].len)) + 1);
+      str = _malloc ((op[0].len << 2) + op[0].len + 1);
     }
 
   ch = str;
 
-  if (op[0].len < 0)
+  if (mpz_is_neg (op))
     {
-      // TODO REALLOC
-      *str = '-';
-      str++;
+      //*str = '-';
+      //str++;
+      mpz_set (x, op);
     }
-  for (i = abs (op[0].len)-1; 0 <= i; i--)
+  else
     {
-      result = sprintf(str, "%.16jx ", op[0].value[i]);
-      printf("%.16jx\n", op[0].value[i]);
+      mpz_set (x, op);
+    }
+
+  for (i = x[0].len; 0 < i; i--)
+    {
+      result = sprintf(str, "%.16jx ", x[0].value[i-1]);
       str += 16;
     }
 
+  mpz_clear (x);
   return ch;
 }
 
@@ -289,49 +305,40 @@ _add (uintmax_t * rop, uintmax_t * op)
 void
 mpz_add (mpz_t rop, mpz_t op1, mpz_t op2)
 {
-  int carry = 0;
-  intmax_t len1, len2, i;
-  mpz_t x;
+  int op1_is_neg, op2_is_neg, rop_is_neg, carry = 0;
+  uintmax_t len1, len2, i, size;
 
-  /* If only one of the numbers is negative, use subtract */
-  if (op1[0].len < 0 && 0 < op2[0].len)
+  op1_is_neg = mpz_is_neg (op1);
+  op2_is_neg = mpz_is_neg (op2);
+
+  len1 = op1[0].len;
+  len2 = op2[0].len;
+  size = len1 < len2 ? len2 : len1;
+  if (rop[0].len != size)
+    _realloc (rop[0].value, WORD_SIZE * size);
+  rop[0].len = size;
+  for (i = 0; i < rop[0].len; i++)
     {
-      mpz_init_set (x, op1);
-      x[0].len *= -1;
-      mpz_sub (rop, op2, x);
-      mpz_clear (x);
+      rop[0].value[i] = carry;
+      carry = 0;
+      if (i < len1)
+        carry += _add (rop[0].value + i, op1[0].value + i);
+      if (i < len2)
+        carry += _add (rop[0].value + i, op2[0].value + i);
     }
-  else if (0 < op1[0].len && op2[0].len < 0)
+  if (carry)
     {
-      mpz_init_set (x, op2);
-      x[0].len *= -1;
-      mpz_sub (rop, op1, x);
-      mpz_clear (x);
+      rop[0].len++;
+      _realloc (rop[0].value, WORD_SIZE * rop[0].len);
+      rop[0].value[rop[0].len-1] = carry;
     }
-  /* Otherwise, add */
-  else
+
+  rop_is_neg = mpz_is_neg (rop);
+  if (rop_is_neg && !op1_is_neg && !op2_is_neg)
     {
-      len1 = abs (op1[0].len);
-      len2 = abs (op2[0].len);
-      rop[0].len = len1 < len2 ? len2 : len1;
-      _realloc (rop[0].value, sizeof (uintmax_t) * rop[0].len);
-      for (i = 0; i < rop[0].len; i++)
-        {
-          rop[0].value[i] = carry;
-          carry = 0;
-          if (i < len1)
-            carry += _add (rop[0].value + i, op1[0].value + i);
-          if (i < len2)
-            carry += _add (rop[0].value + i, op2[0].value + i);
-        }
-      if (carry)
-        {
-          rop[0].len++;
-          _realloc (rop[0].value, sizeof (uintmax_t) * rop[0].len);
-          rop[0].value[rop[0].len-1] = carry;
-        }
-      if (op1[0].len < 0 || op2[0].len < 0)
-        rop[0].len = -1 * rop[0].len;
+      rop[0].len++;
+      _realloc (rop[0].value, WORD_SIZE * rop[0].len);
+      rop[0].value[rop[0].len-1] = 0;
     }
 }
 void
@@ -343,92 +350,52 @@ mpz_add_ui (mpz_t rop, mpz_t op1, unsigned long int op2)
   mpz_clear (x);
 }
 void
-_sub (uintmax_t * rop, uintmax_t op1, uintmax_t op2, int * borrow)
-{
-  if (*borrow)
-    {
-      if (0 < op1)
-        op1--;
-      else
-        {
-          op1 = UINTMAX_MAX;
-          *borrow = 1;
-        }
-    }
-
-  /* The resulting subtraction will require borrowing */
-  if (op1 < op2)
-    *borrow = 1;
-  else
-    *borrow = 0;
-
-  *rop = op1 - op2;
-}
-void
 mpz_sub (mpz_t rop, mpz_t op1, mpz_t op2)
 {
-  int borrow = 0;
-  intmax_t len1, len2, i;
+  int op1_is_neg, x_is_neg, carry = 0;
+  uintmax_t len1, len2, value1, value2, i;
   mpz_t x;
 
-  /* If only op2 is negative, use add */
-  if (0 < op1[0].len && op2[0].len < 0)
+  mpz_init (x);
+  mpz_neg (x, op2);
+  op1_is_neg = mpz_is_neg (op1);
+  x_is_neg = mpz_is_neg (x);
+
+  /* Subtracting a negative number */
+  if (!x_is_neg)
     {
-      mpz_init_set (x, op2);
-      x[0].len *= -1;
-      mpz_add (rop, x, op2);
-      mpz_clear (x);
-    }
-  /* If only op1 is negative, use add */
-  else if (op1[0].len < 0 && 0 < op2[0].len)
-    {
-      mpz_init_set (x, op2);
-      x[0].len *= -1;
       mpz_add (rop, op1, x);
-      mpz_clear (x);
+      return;
     }
-  /* Otherwise, subtract */
+
+  if (op1_is_neg)
+    value1 = UINTMAX_MAX;
   else
+    value1 = 0;
+
+  if (x_is_neg)
+    value2 = UINTMAX_MAX;
+  else
+    value2 = 0;
+
+  len1 = op1[0].len;
+  len2 = x[0].len;
+  rop[0].len = len1 < len2 ? len2 : len1;
+  _realloc (rop[0].value, WORD_SIZE * rop[0].len);
+  for (i = 0; i < rop[0].len; i++)
     {
-      /* If op1 < op2, swap and negate the result */
-      if (mpz_cmp (op1, op2) < 0)
-        {
-          mpz_sub (rop, op2, op1);
-          rop[0].len *= -1;
-        }
+      rop[0].value[i] = carry;
+      carry = 0;
+
+      if (i < len1)
+        carry += _add (rop[0].value + i, op1[0].value + i);
       else
-        {
-          len1 = abs (op1[0].len);
-          len2 = abs (op2[0].len);
-          rop[0].len = abs (op1[0].len);
-          _realloc (rop[0].value, sizeof (uintmax_t) * rop[0].len);
-          for (i = 0; i < rop[0].len; i++)
-            {
-              if (i < len1 && i < len2)
-                {
-                  _sub (rop[0].value + i, op1[0].value[i], op2[0].value[i], &borrow);
-                }
-              else if (i < len1)
-                {
-                  rop[0].value[i] = *op1[0].value;
-                  if (borrow)
-                    {
-                      if (0 < rop[0].value[i])
-                        rop[0].value[i]--;
-                      else
-                        rop[0].value[i] = UINTMAX_MAX;
-                      borrow = 0;
-                    }
-                }
-              /* Should never reach this point if op2 < op1 */
-              else if (i < len2)
-                {
-                  // TODO crash
-                }
-            }
-          if (op1[0].len < 0)
-            rop[0].len *= -1;
-        }
+        carry += _add (rop[0].value + i, &value1);
+
+      if (i < len2)
+        carry += _add (rop[0].value + i, x[0].value + i);
+      else
+        carry += _add (rop[0].value + i, &value2);
     }
 }
 void
@@ -449,7 +416,7 @@ mpz_ui_sub (mpz_t rop, unsigned long int op1, mpz_t op2)
 }
 uintmax_t
 _mul (uintmax_t * rop, uintmax_t op1, uintmax_t op2, uintmax_t carry) {
-  int shift = sizeof (uintmax_t) >> 1;
+  int shift = WORD_SIZE >> 1;
   uintmax_t top1, top2, bot1, bot2, rtop, rbot, mask = UINTMAX_MAX << shift;
 
   /* Split the two operands to ensure the result does not overflow.  Take the
@@ -472,34 +439,58 @@ void
 mpz_mul (mpz_t rop, mpz_t op1, mpz_t op2)
 {
   int i, j, carry;
-  intmax_t len1, len2;
-  len1 = abs (op1[0].len);
-  len2 = abs (op2[0].len);
+  uintmax_t len1, len2, op1_is_neg, op2_is_neg;
+  mpz_t x, y, swap;
+
+  mpz_init (x);
+  mpz_init (y);
+
+  len1 = op1[0].len;
+  len2 = op2[0].len;
+
+  op1_is_neg = mpz_is_neg (op1);
+  op2_is_neg = mpz_is_neg (op2);
+
+  if (op1_is_neg)
+    mpz_neg (x, op1);
+  else
+    mpz_set (x, op1);
+
+  if (op2_is_neg)
+    mpz_neg (y, op2);
+  else
+    mpz_set (y, op2);
 
   rop[0].len = len1 + len2;
 
   /* Initialize and set to 0 */
-  _realloc (rop[0].value, sizeof (uintmax_t) * rop[0].len);
+  _realloc (rop[0].value, WORD_SIZE * rop[0].len);
   for (j = 0; j < rop[0].len; j++)
     rop[0].value[j] = 0;
 
   /* Multiply */
   for (j = 0; j < len1; j++)
     for (i = carry = 0; i < len2; i++)
-      carry = _mul (rop[0].value + i + j, op1[0].value[i], op2[0].value[j], carry);
+      carry = _mul (rop[0].value + i + j, x[0].value[i], y[0].value[j], carry);
 
   if (carry)
     {
       rop[0].len++;
-      _realloc (rop[0].value, sizeof (uintmax_t) * rop[0].len);
+      _realloc (rop[0].value, WORD_SIZE * rop[0].len);
       rop[0].value[rop[0].len-1] = carry;
     }
 
   /* Set the sign of the result */
-  if (op1[0].len < 0 && op1[0].len < 0)
-    rop[0].len = abs (rop[0].len);
-  else if (op1[0].len < 0 || op1[0].len < 0)
-    rop[0].len = -1 * abs (rop[0].len);
+  if ((op1_is_neg && !op2_is_neg) || (!op1_is_neg && op2_is_neg))
+    {
+      mpz_init (swap);
+      mpz_neg (swap, rop);
+      mpz_swap (rop, swap);
+      mpz_clear (swap);
+    }
+
+  mpz_clear (x);
+  mpz_clear (y);
 }
 void
 mpz_mul_si (mpz_t rop, mpz_t op1, signed long int op2)
@@ -520,8 +511,22 @@ mpz_mul_ui (mpz_t rop, mpz_t op1, unsigned long int op2)
 void
 mpz_neg (mpz_t rop, mpz_t op)
 {
+  uintmax_t i, sign_bit = ~(UINTMAX_MAX >> 1);
   mpz_set (rop, op);
-  rop[0].len *= -1;
+  for (i = 0; i < rop[0].len-1; i++)
+    rop[0].value[i] = (~rop[0].value[i]) + 1;
+
+  /* If the most significant value is the smallest representable number,
+     we have to extend it to be able to represent that as a positive number. */
+  if (rop[0].value[rop[0].len-1] != sign_bit)
+    rop[0].value[i] = (~rop[0].value[i]) + 1;
+  else
+    {
+      rop[0].value[rop[0].len-1] = 0;
+      rop[0].len++;
+      _realloc (rop[0].value, WORD_SIZE * rop[0].len);
+      rop[0].value[rop[0].len-1] = 1;
+    }
 }
 void
 mpz_abs (mpz_t rop, mpz_t op)
@@ -707,21 +712,45 @@ mpz_mod_ui (mpz_t r, mpz_t n, unsigned long int d)
 
 // Comparison
 int
-mpz_cmp (mpz_t op1, mpz_t op2)
+mpz_is_neg (mpz_t op)
 {
-  intmax_t i;
-
-  if (op1[0].len < op2[0].len)
-    return -1;
-  else if (op2[0].len < op1[0].len)
+  uintmax_t sign_bit = ~(UINTMAX_MAX >> 1);
+  if (op[0].value[op[0].len-1] & sign_bit)
     return 1;
   else
+    return 0;
+}
+int
+mpz_cmp (mpz_t op1, mpz_t op2)
+{
+  uintmax_t i;
+  int op1_is_neg, op2_is_neg;
+
+  op1_is_neg = mpz_is_neg (op1);
+  op2_is_neg = mpz_is_neg (op2);
+
+  /* If only one is negative */
+  if (!op1_is_neg && op2_is_neg)
+    return -1;
+  else if (op1_is_neg && !op2_is_neg)
+    return 1;
+  /* Both positive or negative */
+  else
     {
-      for (i = 0; i < abs (op1[0].len); i++)
+      /* Both negative, check the length for a shortcut */
+      if (op1_is_neg && op1[0].len != op2[0].len)
+        return op1[0].len < op2[0].len ? 1 : -1;
+
+      /* Both positive, check the length for a shortcut */
+      if (!op1_is_neg && op1[0].len != op2[0].len)
+        return op1[0].len < op2[0].len ? -1 : 1;
+
+      /* Scan from the most significant value */
+      for (i = op1[0].len; 0 < i; i--)
         {
-          if (op1[0].value[i] < op2[0].value[i])
+          if (op1[0].value[i-1] < op2[0].value[i-1])
             return -1;
-          else if (op2[0].value[i] < op1[0].value[i])
+          else if (op2[0].value[i-1] < op1[0].value[i-1])
             return 1;
         }
     }
