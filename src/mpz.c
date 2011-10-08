@@ -12,7 +12,7 @@
 #include <string.h>
 
 void * _malloc (size_t size);
-void * _realloc (void * ptr, size_t size);
+void * _realloc (void * ptr, size_t prev_size, size_t new_size);
 void _mem_check (void * ptr);
 int digit_to_int (char ch, int base);
 char int_to_digit (mpz_t op, int base);
@@ -40,24 +40,25 @@ void
 mpz_set (mpz_t rop, mpz_t op)
 {
   if (rop[0].len != op[0].len)
-    _realloc (rop[0].value, WORD_SIZE * op[0].len);
+    {
+      rop[0].value = _realloc (rop[0].value, WORD_SIZE * rop[0].len,
+          WORD_SIZE * op[0].len);
+    }
   memcpy (rop[0].value, op[0].value, WORD_SIZE * op[0].len);
   rop[0].len = op[0].len;
 }
 void
 mpz_set_ui (mpz_t rop, unsigned long int op)
 {
-  _realloc(rop[0].value, WORD_SIZE);
+  rop[0].value = _realloc(rop[0].value, 0, WORD_SIZE);
   rop[0].len = 1;
   *rop[0].value = op;
 }
 void
 mpz_set_si (mpz_t rop, signed long int op)
 {
-  mpz_t swap;
-  signed long int result;
   uintmax_t sign_bit = ~(UINTMAX_MAX >> 1);
-  _realloc(rop[0].value, WORD_SIZE);
+  rop[0].value =_realloc(rop[0].value, 0, WORD_SIZE);
   rop[0].len = 1;
   *rop[0].value = op;
   if (op < 0)
@@ -314,8 +315,8 @@ mpz_add (mpz_t rop, mpz_t op1, mpz_t op2)
   len1 = op1[0].len;
   len2 = op2[0].len;
   size = len1 < len2 ? len2 : len1;
-  if (rop[0].len != size)
-    _realloc (rop[0].value, WORD_SIZE * size);
+  rop[0].value = _realloc (rop[0].value, WORD_SIZE * rop[0].len,
+      WORD_SIZE * size);
   rop[0].len = size;
   for (i = 0; i < rop[0].len; i++)
     {
@@ -329,7 +330,8 @@ mpz_add (mpz_t rop, mpz_t op1, mpz_t op2)
   if (carry)
     {
       rop[0].len++;
-      _realloc (rop[0].value, WORD_SIZE * rop[0].len);
+      rop[0].value = _realloc (rop[0].value, WORD_SIZE * rop[0].len - 1,
+          WORD_SIZE * rop[0].len);
       rop[0].value[rop[0].len-1] = carry;
     }
 
@@ -337,7 +339,8 @@ mpz_add (mpz_t rop, mpz_t op1, mpz_t op2)
   if (rop_is_neg && !op1_is_neg && !op2_is_neg)
     {
       rop[0].len++;
-      _realloc (rop[0].value, WORD_SIZE * rop[0].len);
+      rop[0].value = _realloc (rop[0].value, WORD_SIZE * rop[0].len - 1,
+          WORD_SIZE * rop[0].len);
       rop[0].value[rop[0].len-1] = 0;
     }
 }
@@ -380,8 +383,10 @@ mpz_sub (mpz_t rop, mpz_t op1, mpz_t op2)
 
   len1 = op1[0].len;
   len2 = x[0].len;
+  rop[0].value = _realloc (rop[0].value, WORD_SIZE * rop[0].len,
+      WORD_SIZE * (len1 < len2 ? len2 : len1));
   rop[0].len = len1 < len2 ? len2 : len1;
-  _realloc (rop[0].value, WORD_SIZE * rop[0].len);
+
   for (i = 0; i < rop[0].len; i++)
     {
       rop[0].value[i] = carry;
@@ -461,10 +466,10 @@ mpz_mul (mpz_t rop, mpz_t op1, mpz_t op2)
   else
     mpz_set (y, op2);
 
-  rop[0].len = len1 + len2;
-
   /* Initialize and set to 0 */
-  _realloc (rop[0].value, WORD_SIZE * rop[0].len);
+  rop[0].value = _realloc (rop[0].value, WORD_SIZE * rop[0].len,
+      WORD_SIZE * (len1 + len2));
+  rop[0].len = len1 + len2;
   for (j = 0; j < rop[0].len; j++)
     rop[0].value[j] = 0;
 
@@ -476,7 +481,8 @@ mpz_mul (mpz_t rop, mpz_t op1, mpz_t op2)
   if (carry)
     {
       rop[0].len++;
-      _realloc (rop[0].value, WORD_SIZE * rop[0].len);
+      rop[0].value = _realloc (rop[0].value, WORD_SIZE * rop[0].len - 1,
+          WORD_SIZE * rop[0].len);
       rop[0].value[rop[0].len-1] = carry;
     }
 
@@ -524,7 +530,8 @@ mpz_neg (mpz_t rop, mpz_t op)
     {
       rop[0].value[rop[0].len-1] = 0;
       rop[0].len++;
-      _realloc (rop[0].value, WORD_SIZE * rop[0].len);
+      rop[0].value = _realloc (rop[0].value, WORD_SIZE * rop[0].len - 1,
+          WORD_SIZE * rop[0].len);
       rop[0].value[rop[0].len-1] = 1;
     }
 }
@@ -912,10 +919,12 @@ _malloc (size_t size)
 }
 
 void *
-_realloc (void * ptr, size_t size)
+_realloc (void * ptr, size_t prev_size, size_t new_size)
 {
-  void * result = realloc (ptr, size);
+  void * result = malloc (new_size);
   _mem_check (result);
+  memcpy (result, ptr, prev_size < new_size ? prev_size: new_size);
+  free (ptr);
   return result;
 }
 
