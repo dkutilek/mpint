@@ -50,8 +50,18 @@ mpz_set (mpz_t rop, mpz_t op)
 void
 mpz_set_ui (mpz_t rop, unsigned long int op)
 {
-  rop[0].value = _realloc(rop[0].value, 0, WORD_SIZE);
-  rop[0].len = 1;
+  uintmax_t sign_bit = ~(UINTMAX_MAX >> 1);
+  if (op & sign_bit)
+    {
+      rop[0].value = _realloc(rop[0].value, 0, WORD_SIZE * 2);
+      rop[0].value[1] = 0;
+      rop[0].len = 2;
+    }
+  else
+    {
+      rop[0].value = _realloc(rop[0].value, 0, WORD_SIZE);
+      rop[0].len = 1;
+    }
   *rop[0].value = op;
 }
 void
@@ -259,7 +269,7 @@ mpz_get_hex (char * str, mpz_t op)
 
   if (str == NULL)
     {
-      str = _malloc ((op[0].len << 2) + op[0].len + 1);
+      str = _malloc ((op[0].len << 4) + 2);
     }
 
   ch = str;
@@ -421,8 +431,8 @@ mpz_ui_sub (mpz_t rop, unsigned long int op1, mpz_t op2)
 }
 uintmax_t
 _mul (uintmax_t * rop, uintmax_t op1, uintmax_t op2, uintmax_t carry) {
-  int shift = WORD_SIZE >> 1;
-  uintmax_t top1, top2, bot1, bot2, rtop, rbot, mask = UINTMAX_MAX << shift;
+  int shift = WORD_SIZE << 2;
+  uintmax_t top1, top2, bot1, bot2, rtop, rbot, mask = UINTMAX_MAX >> shift;
 
   /* Split the two operands to ensure the result does not overflow.  Take the
      overflow of the bottom and add it to the result of the top.  Take the
@@ -437,7 +447,7 @@ _mul (uintmax_t * rop, uintmax_t op1, uintmax_t op2, uintmax_t carry) {
   rbot = bot1 * bot2 + carry;
   rtop = (top1 * top2) + (rbot >> shift);
 
-  *rop = (rtop << shift) | (rbot & (~mask));
+  *rop = (rtop << shift) | (rbot & mask);
   return (rbot & mask) >> shift;
 }
 void
@@ -477,6 +487,17 @@ mpz_mul (mpz_t rop, mpz_t op1, mpz_t op2)
   for (j = 0; j < len1; j++)
     for (i = carry = 0; i < len2; i++)
       carry = _mul (rop[0].value + i + j, x[0].value[i], y[0].value[j], carry);
+
+  /* Clear extra padded zeros */
+  for (j = rop[0].len; 1 < j; j--)
+    if (rop[0].value[j-1] != 0)
+      break;
+  if (j < rop[0].len)
+    {
+      rop[0].value = _realloc (rop[0].value, WORD_SIZE * rop[0].len,
+          WORD_SIZE * j);
+      rop[0].len = j;
+    }
 
   if (carry)
     {
@@ -923,7 +944,7 @@ _realloc (void * ptr, size_t prev_size, size_t new_size)
 {
   void * result = malloc (new_size);
   _mem_check (result);
-  memcpy (result, ptr, prev_size < new_size ? prev_size: new_size);
+  memcpy (result, ptr, prev_size < new_size ? prev_size : new_size);
   free (ptr);
   return result;
 }
