@@ -432,7 +432,8 @@ mpz_ui_sub (mpz_t rop, unsigned long int op1, mpz_t op2)
 uintmax_t
 _mul (uintmax_t * rop, uintmax_t op1, uintmax_t op2, uintmax_t carry) {
   int shift = WORD_SIZE << 2;
-  uintmax_t top1, top2, bot1, bot2, rtop, rbot, mask = UINTMAX_MAX >> shift;
+  uintmax_t bot_oflow, top_oflow, top1, top2, bot1, bot2, rtop, rbot, rcarry, mask = UINTMAX_MAX >> shift;
+  bot_oflow = top_oflow = 0;
 
   /* Split the two operands to ensure the result does not overflow.  Take the
      overflow of the bottom and add it to the result of the top.  Take the
@@ -444,17 +445,24 @@ _mul (uintmax_t * rop, uintmax_t op1, uintmax_t op2, uintmax_t carry) {
   bot1 = op1 & mask;
   bot2 = op2 & mask;
 
-  rbot = bot1 * bot2 + carry;
-  rtop = (top1 * top2) + (rbot >> shift);
+  /* If we have a combination of maximum representable integers, then we have
+     to pass some extra carry into the return value; */
+  if (top1 == mask && bot1 == mask && top2 == mask && bot2 == mask)
+    top_oflow++;
+
+  rbot = (bot1 * bot2) + (carry & mask) + (*rop & mask);
+  rtop = (top1 * bot2) + (bot1 * top2) + (rbot >> shift) + (*rop >> shift)
+      + (carry >> shift);
+  rcarry = (top1 * top2) + (rtop >> shift) + (top_oflow << (shift + 1));
 
   *rop = (rtop << shift) | (rbot & mask);
-  return (rbot & mask) >> shift;
+  return rcarry;
 }
 void
 mpz_mul (mpz_t rop, mpz_t op1, mpz_t op2)
 {
-  int i, j, carry;
-  uintmax_t len1, len2, op1_is_neg, op2_is_neg;
+  int i, j;
+  uintmax_t len1, len2, op1_is_neg, op2_is_neg, carry;
   mpz_t x, y, swap;
 
   mpz_init (x);
@@ -485,8 +493,12 @@ mpz_mul (mpz_t rop, mpz_t op1, mpz_t op2)
 
   /* Multiply */
   for (j = 0; j < len1; j++)
-    for (i = carry = 0; i < len2; i++)
-      carry = _mul (rop[0].value + i + j, x[0].value[i], y[0].value[j], carry);
+    {
+      for (i = carry = 0; i < len2; i++)
+        carry = _mul (rop[0].value + i + j, x[0].value[i], y[0].value[j], carry);
+      if (carry)
+        rop[0].value[i+j] += carry;
+    }
 
   /* Clear extra padded zeros */
   for (j = rop[0].len; 1 < j; j--)
@@ -559,8 +571,15 @@ mpz_neg (mpz_t rop, mpz_t op)
 void
 mpz_abs (mpz_t rop, mpz_t op)
 {
+  mpz_t swap;
   mpz_set (rop, op);
-  rop[0].len = abs (rop[0].len);
+  if (mpz_is_neg (rop))
+    {
+      mpz_init (swap);
+      mpz_neg (swap, rop);
+      mpz_swap (rop, swap);
+      mpz_clear (swap);
+    }
 }
 
 // Division
