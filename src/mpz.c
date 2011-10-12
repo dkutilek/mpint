@@ -699,10 +699,195 @@ mpz_tdiv_r (mpz_t r, mpz_t n, mpz_t d)
 {
 
 }
+/* Compute the b's compliment of op, and place is in rop. */
+void
+_b_compliment (mpz_t rop, mpz_t op, mpz_t b)
+{
+  uintmax_t len = op[0].len < b[0].len ? b[0].len : op[0].len;
+  mpz_add (rop, op, b);
+  if (rop[0].len != len)
+    {
+      rop[0].value = _realloc (rop[0].value, rop[0].len, len);
+      rop[0].len = len;
+    }
+}
+/* Compute op1 exp (op2), and place it in rop.  This is used to
+   find b to use in calculating b's compliment. */
+void
+_exp (mpz_t rop, mpz_t op1, uintmax_t op2)
+{
+  mpz_t temp1, temp2;
+  uintmax_t i;
+  mpz_init_set (temp1, op1);
+  mpz_init_set (temp2, op1);
+
+  for (i = 0; i < op2; i++)
+    {
+      mpz_mul (rop, temp1, temp2);
+      mpz_set (temp1, rop);
+    }
+
+  mpz_clear (temp1);
+  mpz_clear (temp2);
+}
+/* Recursive function that calculates the quotient q from the division
+   of n by d, returning the remainder. */
+uintmax_t
+_div (mpz_t q, mpz_t n, uintmax_t d)
+{
+  mpz_t q_temp, n_temp;
+  uintmax_t len, r;
+
+  mpz_init (q_temp);
+  mpz_init (n_temp);
+
+  q[0].value = _realloc (q[0].value, q[0].len, n[0].len);
+  len = q[0].len = n[0].len;
+
+  if (len == 1)
+    {
+      q[0].value[0] = n[0].value[0] / d;
+      return n[0].value[0] % d;
+    }
+  else if (1 < len)
+    {
+      q[0].value[len-1] = n[0].value[len-1] / d;
+      r = n[0].value[len-1] % d;
+
+      /* Expand n_temp if there is a remainder. */
+      if (r)
+        {
+          n_temp[0].value = _realloc (n_temp[0].value, 0, WORD_SIZE * 2);
+          n_temp[0].len = 2;
+          n_temp[0].value[1] = r;
+          n_temp[0].value[0] = n[0].value[len-2];
+        }
+      else
+        {
+          n_temp[0].value = _realloc (n_temp[0].value, 0, WORD_SIZE);
+          n_temp[0].len = 1;
+          n_temp[0].value[0] = n[0].value[len-2];
+        }
+
+      /* Recurse on the rest of the number, copy the rest of q, and return. */
+      r = _div (q_temp, n_temp, d);
+      memcpy (q[0].value + 1, q_temp[0].value, q_temp[0].len * WORD_SIZE);
+      return r;
+    }
+  else
+    {
+      // CRASH
+      printf("division failed.\n");
+      exit (0);
+    }
+}
 void
 mpz_tdiv_qr (mpz_t q, mpz_t r, mpz_t n, mpz_t d)
 {
+  mpz_t x, y, swap, q_temp, r_temp, n_temp, temp1, temp2, compliment;
+  uintmax_t z, i, j, k, l, b;
+  int n_is_neg, d_is_neg, temp_is_neg;
 
+  mpz_init (x);
+  mpz_init (y);
+  mpz_init (q_temp);
+  mpz_init (r_temp);
+  mpz_init (n_temp);
+  mpz_init (temp1);
+  mpz_init (temp2);
+  mpz_init (compliment);
+
+  n_is_neg = mpz_is_neg (n);
+  d_is_neg = mpz_is_neg (d);
+
+  if (n_is_neg)
+    mpz_neg (x, n);
+  else
+    mpz_set (x, n);
+
+  if (d_is_neg)
+    mpz_neg (y, d);
+  else
+    mpz_set (y, d);
+
+  /* x = (x[k+l-1] ... x[1], x[0])_b and
+     y = (y[l-1] ... y[1], y[0])_b
+     where each sub represents a number in it's array,
+     and b is the word size. */
+
+  l = y[0].len;
+  k = x[0].len - l;
+  b = sizeof (uintmax_t) * CHAR_BIT - 1;
+
+  /* set compliment to b ^ (l-1) */
+  mpz_set_ui (temp1, b);
+  _exp (compliment, temp1, l+1);
+
+  /* If if the divisor is larger than what its dividing, we can't do it. */
+  if (mpz_cmp(x, y) < 0)
+    {
+      // CRASH
+      exit (0);
+    }
+
+  /* Normalization constant */
+  z = b / y[0].value[l-1];
+
+  /* Normalize values */
+  mpz_init (swap);
+  mpz_mul_ui (swap, x, z);
+  mpz_swap (x, swap);
+  mpz_mul_ui (swap, y, z);
+  mpz_swap (y, swap);
+
+  for (j = k; 0 < j; j--)
+    {
+      /* set q_temp = (x[j+l]*b + x[j+l-1]) / y[l-1] */
+      mpz_set_ui (n_temp, b) ;
+      mpz_mul_ui (swap, n_temp, x[0].value[j+l]);
+      mpz_add_ui (n_temp, swap, x[0].value[j+l-1]);
+      mpz_set_ui (r_temp, _div (q_temp, n_temp, y[0].value[l-1]));
+
+      /* set n_temp to b*r_temp + x[j+l-2] */
+      mpz_mul_ui (swap, r_temp, b);
+      mpz_add_ui (n_temp, swap, x[0].value[j+l-2]);
+      /* set swap to q_temp*y[l-2] */
+      mpz_mul_ui (swap, q_temp, y[0].value[l-2]);
+
+      do
+        {
+          /* test if q_temp == b or q_temp*y[l-2] > b*r_temp + x[j+l-2] */
+          if (mpz_cmp_ui (q_temp, b) == 0 || 0 < mpz_cmp (swap, n_temp))
+            {
+              /* decrease q_temp by 1 */
+              mpz_sub_ui (temp1, q_temp, 1);
+              mpz_swap (q_temp, temp1);
+
+              /* increase r_temp by y[l-1] */
+              mpz_add_ui (temp1, r_temp, y[0].value[l-1]);
+              mpz_swap (r_temp, temp1);
+            }
+          else
+            break;
+        }
+      while (mpz_cmp_ui (r_temp, b) < 0);
+
+      /* (x[j+l] ... x[j])_b -= q_temp*(y[l-1] ... y[1], y[0])_b */
+      temp1[0].value = _realloc (temp1[0].value, 0, l);
+      /* temp1 = (x[j+l] ... x[j])_b */
+      for (i = 0; i < l+1; i++)
+        temp1[0].value[i] = x[j+i];
+      /* swap = q_temp*(y[l-1] ... y[1], y[0])_b */
+      mpz_mul (swap, q_temp, y);
+      /* temp2 = temp1 - swap */
+      mpz_sub (temp2, temp1, swap);
+
+      temp_is_neg = mpz_is_neg (temp2);
+      if (temp_is_neg)
+        {
+
+        }
+    }
 }
 unsigned long int
 mpz_tdiv_q_ui (mpz_t q, mpz_t n, unsigned long int d)
